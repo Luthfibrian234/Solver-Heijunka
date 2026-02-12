@@ -2,6 +2,8 @@ import streamlit as st
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
 from io import BytesIO
 from openpyxl.styles import PatternFill
 
@@ -293,5 +295,6 @@ if run_solver:
         file_name=output_filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 
     st.success("Solver selesai")
