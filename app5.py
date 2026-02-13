@@ -11,7 +11,7 @@ st.set_page_config(page_title="Packing Distribution Solver", layout="wide")
 
 st.markdown("""
 <style>
-body { background-color: #f7f7f7; }
+body { background-color: #bd1515; }
 h1, h2, h3 { color: #E60012; font-weight: 700; }
 .toyota-card {
   background: white;
@@ -346,3 +346,4 @@ if run_solver:
     )
 
     st.success("Solver selesai")
+
