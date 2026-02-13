@@ -126,22 +126,6 @@ if run_solver:
     if len(PartNameManual) != NUM_PARTS:
         errors.append("❌ Part Name: Jumlah Input Tidak Sesuai")
 
-    if len(FirmMonth_single.splitlines()) > 1:
-        errors.append("❌ Firm Packing Month: hanya boleh input sekali")
-    if len(CarFamily_single.splitlines()) > 1:
-        errors.append("❌ Car Family Code: hanya boleh input sekali")
-
-    if not output_filename.lower().endswith(".xlsx"):
-        errors.append("❌ Nama file harus diakhiri .xlsx")
-
-    required_fields = [
-        part_text, flag_text, lot_text, pattern_text, origin_text,
-        Dock_text, ReExport_text, Kanban_text, AICOCEPT_text, Series_text, PartNameManual_text,
-        FirmMonth_single, CarFamily_single
-    ]
-    if any(not x.strip() for x in required_fields):
-        errors.append("❌ Masih ada kolom input yang kosong")
-
     if errors:
         for e in errors:
             st.error(e)
@@ -150,9 +134,7 @@ if run_solver:
     # Original Solver
     LotSize = [float(x.strip()) for x in lot_text.splitlines() if x.strip()]
     PackingPattern = list(map(float, pattern_text.split()))
-
     IsWorkingDay = [1 if p != 0 else 0 for p in PackingPattern]
-
     origin_pieces = [list(map(int, row.split())) for row in origin_text.splitlines() if row.strip()]
 
     origin = []
@@ -167,9 +149,6 @@ if run_solver:
                 OriginalPacking[d] += origin[i][d]
 
     TotalPart = [sum(origin[i]) for i in range(len(origin))]
-
-    FirmMonth = [FirmMonth_single] * len(PartNames)
-    CarFamilyCode = [CarFamily_single] * len(PartNames)
 
     NUM_PARTS = len(PartNames)
     NUM_DAYS = len(PackingPattern)
@@ -262,7 +241,7 @@ if run_solver:
         ax2.tick_params(labelsize=7)
         st.pyplot(fig2)
 
-    # Excel Output
+    # Output Excel
     df_pieces = pd.DataFrame(result, columns=[f"Hari_{i+1}" for i in range(NUM_DAYS)])
     df_pieces.insert(0, "Part", PartNames)
     df_pieces["Total Part (Box)"] = [sum(row) for row in result]
@@ -283,11 +262,81 @@ if run_solver:
     df_box_O = pd.DataFrame(rows_O, columns=[f"Hari_{i+1}" for i in range(NUM_DAYS)])
     df_box_O.insert(0, "Part", names_O)
 
+    msp_rows_minus = []
+    msp_rows_plus = []
+
+    for i in parts_O_adjust:
+
+        base_meta = {
+            "MD": "U",
+            "FT": "M",
+            "Company Code / Importer": "807D",
+            "Receiving Plant Code": "4",
+            "Dock Code": DockCode[i],
+            "Supplier Code / Exporter": " ",
+            "Supplier Plant Code": "",
+            "Shipping Dock": "",
+            "Cross Dock": "",
+            "Cross Dock Plant Code": "",
+            "MSP Order Type": "R",
+            "Firm Packing Month (N Month)": FirmMonth_single,
+            "Car Family Code": CarFamily_single,
+            "Re-Export Code": ReExportCode[i],
+            "Part No": PartNames[i],
+            "Order Lot Size": LotSize[i],
+            "Kanban No": KanbanNo[i],
+        }
+
+        row_minus = base_meta.copy()
+        row_minus["Sign"] = "-"
+        for d in range(NUM_DAYS):
+            row_minus[f"N-{d+1}"] = origin_pieces[i][d]
+
+        row_minus["Source Code"] = "4"
+        row_minus["AICO/CEPT_N"] = AICOCEPT[i]
+        row_minus["Series"] = SeriesCode[i]
+        row_minus["Life Cycle Code"] = "0"
+        row_minus["Supplier / Exporter Name"] = "TOYOTA MOTOR THAILAND"
+        row_minus["Part Name"] = PartNameManual[i]
+
+        row_plus = base_meta.copy()
+        row_plus["Sign"] = "+"
+        for d in range(NUM_DAYS):
+            row_plus[f"N-{d+1}"] = result_box[i][d]
+
+        row_plus["Source Code"] = "4"
+        row_plus["AICO/CEPT_N"] = AICOCEPT[i]
+        row_plus["Series"] = SeriesCode[i]
+        row_plus["Life Cycle Code"] = "0"
+        row_plus["Supplier / Exporter Name"] = "TOYOTA MOTOR THAILAND"
+        row_plus["Part Name"] = PartNameManual[i]
+
+        msp_rows_minus.append(row_minus)
+        msp_rows_plus.append(row_plus)
+
+    msp_rows = msp_rows_minus + msp_rows_plus
+    df_msp = pd.DataFrame(msp_rows)
+
+    # Export
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df_pieces.to_excel(writer, sheet_name="Box Level", index=False)
         df_box.to_excel(writer, sheet_name="Pieces Level", index=False)
         df_box_O.to_excel(writer, sheet_name="Top N Pieces Level", index=False)
+        df_msp.to_excel(writer, sheet_name="MSP Format", index=False)
+
+        workbook = writer.book
+        ws = writer.sheets["MSP Format"]
+
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+
+        sign_col_index = list(df_msp.columns).index("Sign") + 1
+
+        for row_idx in range(2, len(df_msp) + 2):
+            sign_val = ws.cell(row=row_idx, column=sign_col_index).value
+            if sign_val == "-":
+                for col_idx in range(1, len(df_msp.columns) + 1):
+                    ws.cell(row=row_idx, column=col_idx).fill = yellow_fill
 
     st.download_button(
         label="📥 Download Excel Solver Output",
@@ -295,6 +344,5 @@ if run_solver:
         file_name=output_filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
 
     st.success("Solver selesai")
